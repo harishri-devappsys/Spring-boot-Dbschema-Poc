@@ -38,6 +38,16 @@ spring:
 mvn spring-boot:run
 ```
 
+
+## 🧪 Testing
+
+### Web Interface
+Visit `http://localhost:8080/schema-test.html` for an interactive testing interface where you can:
+- Create tables with a user-friendly form
+- Update existing schemas
+- View all tables and their structures
+- Test all API endpoints without writing curl commands
+
 ## 📡 API Endpoints
 
 ### Create Table
