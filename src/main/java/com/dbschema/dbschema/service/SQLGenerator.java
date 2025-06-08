@@ -146,16 +146,16 @@ public class SQLGenerator {
         
         // Check if primary key configuration has changed
         if (!oldPrimaryKeys.equals(newPrimaryKeys)) {
-            // Drop existing primary key constraint if it exists
+            // Drop existing primary key constraint if it exists (PostgreSQL syntax)
             if (!oldPrimaryKeys.isEmpty()) {
+                // PostgreSQL automatically names the primary key constraint as tablename_pkey
                 alterStatements.add("ALTER TABLE " + tableName + " DROP CONSTRAINT IF EXISTS " + tableName + "_pkey;");
-                alterStatements.add("ALTER TABLE " + tableName + " DROP PRIMARY KEY;"); // For MySQL compatibility
             }
             
             // Add new primary key constraint if specified
             if (!newPrimaryKeys.isEmpty()) {
                 String primaryKeyColumns = String.join(", ", newPrimaryKeys);
-                alterStatements.add("ALTER TABLE " + tableName + " ADD PRIMARY KEY (" + primaryKeyColumns + ");");
+                alterStatements.add("ALTER TABLE " + tableName + " ADD CONSTRAINT " + tableName + "_pkey PRIMARY KEY (" + primaryKeyColumns + ");");
             }
         }
     }
@@ -180,26 +180,30 @@ public class SQLGenerator {
     }
     
     private String generateModifyColumnSQL(String tableName, ColumnDefinition col) {
-        StringBuilder sql = new StringBuilder();
-        sql.append("ALTER TABLE ").append(tableName).append(" ALTER COLUMN ");
-        sql.append(col.getName()).append(" TYPE ").append(mapDataType(col.getType()));
+        // PostgreSQL requires separate ALTER statements for different column modifications
+        List<String> alterParts = new ArrayList<>();
+        
+        // Type change
+        alterParts.add("ALTER TABLE " + tableName + " ALTER COLUMN " + col.getName() + " TYPE " + mapDataType(col.getType()));
         
         // Handle nullability changes
         if (col.getNullable() != null) {
             if (col.getNullable()) {
-                sql.append(", ALTER COLUMN ").append(col.getName()).append(" DROP NOT NULL");
+                alterParts.add("ALTER TABLE " + tableName + " ALTER COLUMN " + col.getName() + " DROP NOT NULL");
             } else {
-                sql.append(", ALTER COLUMN ").append(col.getName()).append(" SET NOT NULL");
+                alterParts.add("ALTER TABLE " + tableName + " ALTER COLUMN " + col.getName() + " SET NOT NULL");
             }
         }
         
-        // Handle default value changes
+        // Handle default value changes  
         if (col.getDefaultValue() != null) {
-            sql.append(", ALTER COLUMN ").append(col.getName()).append(" SET DEFAULT ").append(col.getDefaultValue());
+            alterParts.add("ALTER TABLE " + tableName + " ALTER COLUMN " + col.getName() + " SET DEFAULT " + col.getDefaultValue());
+        } else {
+            // If defaultValue is explicitly null, drop the default
+            alterParts.add("ALTER TABLE " + tableName + " ALTER COLUMN " + col.getName() + " DROP DEFAULT");
         }
         
-        sql.append(";");
-        return sql.toString();
+        return String.join(";\n", alterParts) + ";";
     }
     
     private boolean areColumnsEqual(ColumnDefinition old, ColumnDefinition newCol) {
