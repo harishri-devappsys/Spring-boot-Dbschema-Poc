@@ -16,19 +16,19 @@ import java.util.Optional;
 @RequiredArgsConstructor
 @CrossOrigin(origins = "*")
 public class SchemaController {
-    
+
     private final SchemaService schemaService;
-    
+
     @PostMapping("/create")
     public ResponseEntity<String> createSchema(@RequestBody TableSchema schema) {
         try {
             schemaService.createOrUpdateSchema(schema);
             return ResponseEntity.ok("Schema processed successfully");
         } catch (Exception e) {
-            return ResponseEntity.badRequest().body("Failed to process schema: " + e.getMessage());
+            return ResponseEntity.badRequest().body("Failed to proces s schema: " + e.getMessage());
         }
     }
-    
+
     @PostMapping("/update")
     public ResponseEntity<String> updateSchema(@RequestBody UpdateSchemaRequest request) {
         try {
@@ -38,21 +38,30 @@ public class SchemaController {
             return ResponseEntity.badRequest().body("Failed to update schema: " + e.getMessage());
         }
     }
-    
+
     @GetMapping("/changes")
     public ResponseEntity<List<SchemaChangeLog>> getSchemaChanges(
             @RequestParam(required = false) String tableName) {
         return ResponseEntity.ok(schemaService.getSchemaChanges(tableName));
     }
-    
+
     @GetMapping("/current/{tableName}")
     public ResponseEntity<TableSchema> getCurrentSchema(@PathVariable String tableName) {
         Optional<TableSchema> schema = schemaService.getCurrentSchema(tableName);
         return schema.map(ResponseEntity::ok).orElse(ResponseEntity.notFound().build());
     }
+
+    @GetMapping("/tables")
+    public ResponseEntity<List<TableSchema>> getAllTablesWithSchema() {
+        try {
+            List<TableSchema> tables = schemaService.getAllTablesWithSchema();
+            return ResponseEntity.ok(tables);
+        } catch (Exception e) {
+            return ResponseEntity.internalServerError().build();
+        }
+    }
 }
 
-// DTOs
 @Data
 class UpdateSchemaRequest {
     private TableSchema oldSchema;

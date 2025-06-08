@@ -70,6 +70,9 @@ public class SQLGenerator {
         Map<String, ColumnDefinition> newColumns = newSchema.getColumns().stream()
             .collect(Collectors.toMap(ColumnDefinition::getName, col -> col));
         
+        // Handle primary key changes first (before other column modifications)
+        handlePrimaryKeyChanges(oldColumns, newColumns, tableName, alterStatements);
+        
         // Find columns to add
         for (String colName : newColumns.keySet()) {
             if (!oldColumns.containsKey(colName)) {
@@ -85,14 +88,28 @@ public class SQLGenerator {
             }
         }
         
-        // Find columns to modify
+        // Find columns to modify (excluding primary key changes which are handled separately)
         for (String colName : newColumns.keySet()) {
             if (oldColumns.containsKey(colName)) {
                 ColumnDefinition oldCol = oldColumns.get(colName);
                 ColumnDefinition newCol = newColumns.get(colName);
                 
                 if (!areColumnsEqual(oldCol, newCol)) {
-                    alterStatements.add(generateModifyColumnSQL(tableName, newCol));
+                    // Handle non-primary key changes
+                    if (!Objects.equals(oldCol.getType(), newCol.getType()) ||
+                        !Objects.equals(oldCol.getNullable(), newCol.getNullable()) ||
+                        !Objects.equals(oldCol.getDefaultValue(), newCol.getDefaultValue())) {
+                        alterStatements.add(generateModifyColumnSQL(tableName, newCol));
+                    }
+                    
+                    // Handle unique constraint changes
+                    if (!Objects.equals(oldCol.getUnique(), newCol.getUnique())) {
+                        if (newCol.getUnique() != null && newCol.getUnique()) {
+                            alterStatements.add("ALTER TABLE " + tableName + " ADD CONSTRAINT uk_" + tableName + "_" + colName + " UNIQUE (" + colName + ");");
+                        } else {
+                            alterStatements.add("ALTER TABLE " + tableName + " DROP CONSTRAINT IF EXISTS uk_" + tableName + "_" + colName + ";");
+                        }
+                    }
                 }
                 
                 // Handle index changes
@@ -110,6 +127,39 @@ public class SQLGenerator {
         return alterStatements;
     }
     
+    private void handlePrimaryKeyChanges(Map<String, ColumnDefinition> oldColumns, 
+                                       Map<String, ColumnDefinition> newColumns, 
+                                       String tableName, 
+                                       List<String> alterStatements) {
+        
+        // Find old primary key columns
+        Set<String> oldPrimaryKeys = oldColumns.entrySet().stream()
+            .filter(entry -> entry.getValue().getPrimaryKey() != null && entry.getValue().getPrimaryKey())
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+        
+        // Find new primary key columns
+        Set<String> newPrimaryKeys = newColumns.entrySet().stream()
+            .filter(entry -> entry.getValue().getPrimaryKey() != null && entry.getValue().getPrimaryKey())
+            .map(Map.Entry::getKey)
+            .collect(Collectors.toSet());
+        
+        // Check if primary key configuration has changed
+        if (!oldPrimaryKeys.equals(newPrimaryKeys)) {
+            // Drop existing primary key constraint if it exists
+            if (!oldPrimaryKeys.isEmpty()) {
+                alterStatements.add("ALTER TABLE " + tableName + " DROP CONSTRAINT IF EXISTS " + tableName + "_pkey;");
+                alterStatements.add("ALTER TABLE " + tableName + " DROP PRIMARY KEY;"); // For MySQL compatibility
+            }
+            
+            // Add new primary key constraint if specified
+            if (!newPrimaryKeys.isEmpty()) {
+                String primaryKeyColumns = String.join(", ", newPrimaryKeys);
+                alterStatements.add("ALTER TABLE " + tableName + " ADD PRIMARY KEY (" + primaryKeyColumns + ");");
+            }
+        }
+    }
+    
     private String generateAddColumnSQL(String tableName, ColumnDefinition col) {
         StringBuilder sql = new StringBuilder();
         sql.append("ALTER TABLE ").append(tableName).append(" ADD COLUMN ");
@@ -123,6 +173,8 @@ public class SQLGenerator {
             sql.append(" DEFAULT ").append(col.getDefaultValue());
         }
         
+        // Note: Primary key constraint for new columns is handled in handlePrimaryKeyChanges
+        
         sql.append(";");
         return sql.toString();
     }
@@ -131,6 +183,21 @@ public class SQLGenerator {
         StringBuilder sql = new StringBuilder();
         sql.append("ALTER TABLE ").append(tableName).append(" ALTER COLUMN ");
         sql.append(col.getName()).append(" TYPE ").append(mapDataType(col.getType()));
+        
+        // Handle nullability changes
+        if (col.getNullable() != null) {
+            if (col.getNullable()) {
+                sql.append(", ALTER COLUMN ").append(col.getName()).append(" DROP NOT NULL");
+            } else {
+                sql.append(", ALTER COLUMN ").append(col.getName()).append(" SET NOT NULL");
+            }
+        }
+        
+        // Handle default value changes
+        if (col.getDefaultValue() != null) {
+            sql.append(", ALTER COLUMN ").append(col.getName()).append(" SET DEFAULT ").append(col.getDefaultValue());
+        }
+        
         sql.append(";");
         return sql.toString();
     }
@@ -139,7 +206,9 @@ public class SQLGenerator {
         return Objects.equals(old.getType(), newCol.getType()) &&
                Objects.equals(old.getNullable(), newCol.getNullable()) &&
                Objects.equals(old.getDefaultValue(), newCol.getDefaultValue()) &&
-               Objects.equals(old.getUnique(), newCol.getUnique());
+               Objects.equals(old.getUnique(), newCol.getUnique()) &&
+               Objects.equals(old.getPrimaryKey(), newCol.getPrimaryKey()) && // Added primary key check
+               Objects.equals(old.getIndex(), newCol.getIndex());
     }
     
     private String mapDataType(String type) {

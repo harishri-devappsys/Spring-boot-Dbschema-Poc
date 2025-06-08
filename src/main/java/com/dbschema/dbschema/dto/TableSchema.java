@@ -12,3 +12,10 @@ public class TableSchema {
     @JsonProperty("columns")
     private List<ColumnDefinition> columns;
 }
+
+@Data
+class TablesResponse {
+    private List<TableSchema> tables;
+    private int count;
+}
+
