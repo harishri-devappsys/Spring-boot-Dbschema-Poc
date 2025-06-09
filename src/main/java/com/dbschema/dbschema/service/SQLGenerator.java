@@ -60,6 +60,7 @@ public class SQLGenerator {
         return sql.toString();
     }
     
+    //this function needs to be optimized
     public List<String> generateAlterTableSQL(TableSchema oldSchema, TableSchema newSchema) {
         List<String> alterStatements = new ArrayList<>();
         String tableName = newSchema.getTableName();
